@@ -36,8 +36,20 @@ endif()
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/plugin-main.c src/pcam-reader.cpp src/pcam-reader.hpp src/tcp-socket.cpp src/tcp-socket.hpp
-    src/h264-decoder.cpp src/h264-decoder.hpp
+  PRIVATE
+    src/plugin-main.cpp
+    src/phonecam-source.cpp
+    src/phonecam-source.hpp
+    src/packet-queue.cpp
+    src/packet-queue.hpp
+    src/adb-forward.cpp
+    src/adb-forward.hpp
+    src/pcam-reader.cpp
+    src/pcam-reader.hpp
+    src/tcp-socket.cpp
+    src/tcp-socket.hpp
+    src/h264-decoder.cpp
+    src/h264-decoder.hpp
 )
 
 # FFmpeg from the prebuilt obs-deps: same major versions as the DLLs OBS ships (avcodec-62,

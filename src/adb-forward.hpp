@@ -1,6 +1,6 @@
 /*
-Plugin Name
-Copyright (C) <Year> <Developer> <Email Address>
+Phone Cam
+Copyright (C) 2026 Daniel Mwamba
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -16,19 +16,14 @@ You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
-#include <obs-module.h>
-#include <plugin-support.h>
+#pragma once
 
-OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
+#include <atomic>
+#include <cstdint>
+#include <string>
 
-bool obs_module_load(void)
-{
-	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
-	return true;
-}
-
-void obs_module_unload(void)
-{
-	obs_log(LOG_INFO, "plugin unloaded");
-}
+// Runs `adb forward tcp:<port> tcp:<port>` so the phone's server is reachable on
+// 127.0.0.1:<port> over the USB cable. adb is taken from PATH, else from the default Android
+// SDK location. Returns false (with a reason) if adb is missing, fails, or `keep_running`
+// turns false while waiting.
+bool adb_forward(uint16_t port, const std::atomic<bool> &keep_running, std::string &error);
