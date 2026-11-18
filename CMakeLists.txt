@@ -37,7 +37,16 @@ endif()
 target_sources(
   ${CMAKE_PROJECT_NAME}
   PRIVATE src/plugin-main.c src/pcam-reader.cpp src/pcam-reader.hpp src/tcp-socket.cpp src/tcp-socket.hpp
+    src/h264-decoder.cpp src/h264-decoder.hpp
 )
+
+# FFmpeg from the prebuilt obs-deps: same major versions as the DLLs OBS ships (avcodec-62,
+# avutil-60), so the plugin binds to OBS's own copies at runtime.
+find_path(FFMPEG_INCLUDE_DIR libavcodec/avcodec.h REQUIRED)
+find_library(AVCODEC_LIBRARY avcodec REQUIRED)
+find_library(AVUTIL_LIBRARY avutil REQUIRED)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE "${FFMPEG_INCLUDE_DIR}")
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "${AVCODEC_LIBRARY}" "${AVUTIL_LIBRARY}")
 
 if(OS_WINDOWS)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32)
