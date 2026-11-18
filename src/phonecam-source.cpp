@@ -326,7 +326,10 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_string(settings, kHost, kLocalhost);
 	obs_data_set_default_int(settings, kPort, kDefaultPort);
 	obs_data_set_default_bool(settings, kUsb, true);
-	obs_data_set_default_bool(settings, kHardwareDecode, true);
+	// Off by default: measured on a Ryzen 5 4650U, software decoding of 1080p30 takes ~6 ms per
+	// frame versus ~7 ms for D3D11VA (which must copy each frame back to RAM), and D3D11VA
+	// needs ~350 ms to show the first frame after every (re)connect versus ~30 ms.
+	obs_data_set_default_bool(settings, kHardwareDecode, false);
 	obs_data_set_default_bool(settings, kUnbuffered, true);
 }
 

@@ -54,6 +54,6 @@ Or `cmake --install build_x64 --config Release` (the template's default prefix i
 3. Properties:
    - **USB (adb forward)**, on by default: forwards the port and connects to 127.0.0.1. Turn it off for Wi-Fi and type the IP shown in the app.
    - **Port**: 5050.
-   - **Hardware decoding**: D3D11VA, falls back to software by itself.
+   - **Hardware decoding** (off by default): D3D11VA, falls back to software by itself. On a Ryzen 5 4650U software is faster for 1080p30 (~6 ms vs ~7 ms per frame) and shows the first frame in ~30 ms instead of ~350 ms.
    - **Low latency (unbuffered)**: on by default; turn off only for smoother playback on a bad Wi-Fi.
 4. Logs (Help, Log Files) show `[phone-cam]` lines: connection, stream header, decoder (d3d11va or software), and every 5 s the fps and decode time.
