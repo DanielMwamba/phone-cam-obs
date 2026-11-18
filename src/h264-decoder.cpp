@@ -279,14 +279,14 @@ bool H264Decoder::fill_obs_frame(const AVFrame *frame, obs_source_frame &out)
 	const video_colorspace colorspace = to_obs_colorspace(frame);
 	const bool full_range = frame->color_range == AVCOL_RANGE_JPEG || frame->format == AV_PIX_FMT_YUVJ420P;
 	out.full_range = full_range;
-	video_format_get_parameters_for_format(colorspace, full_range ? VIDEO_RANGE_FULL : VIDEO_RANGE_PARTIAL,
-					       format, out.color_matrix, out.color_range_min, out.color_range_max);
+	video_format_get_parameters_for_format(colorspace, full_range ? VIDEO_RANGE_FULL : VIDEO_RANGE_PARTIAL, format,
+					       out.color_matrix, out.color_range_min, out.color_range_max);
 
 	if (!colors_logged_) {
 		colors_logged_ = true;
-		blog(LOG_INFO, "[phone-cam] decoded %dx%d %s, colorspace %s, %s range", frame->width,
-		     frame->height, av_get_pix_fmt_name(AVPixelFormat(frame->format)),
-		     av_color_space_name(frame->colorspace), full_range ? "full" : "limited");
+		blog(LOG_INFO, "[phone-cam] decoded %dx%d %s, colorspace %s, %s range", frame->width, frame->height,
+		     av_get_pix_fmt_name(AVPixelFormat(frame->format)), av_color_space_name(frame->colorspace),
+		     full_range ? "full" : "limited");
 	}
 	return true;
 }
