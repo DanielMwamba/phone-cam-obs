@@ -111,7 +111,12 @@ void PhoneCamSource::stop()
 	if (!running_)
 		return;
 
-	running_ = false;
+	{
+		// Under the lock: otherwise the network thread can test running_, miss the notify,
+		// and sleep a full reconnect delay before noticing the stop.
+		std::lock_guard<std::mutex> lock(sleep_mutex_);
+		running_ = false;
+	}
 	sleep_cv_.notify_all();
 	if (socket_)
 		socket_->abort();
