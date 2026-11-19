@@ -251,6 +251,10 @@ void PhoneCamSource::decode_loop(const bool try_hardware)
 			obs_log(LOG_INFO, "decoder: %s", decoder.backend_name());
 			first_frame_pending = true;
 			errors_logged = 0;
+			// Count from this stream's start, not from the idle time before it.
+			stats_start_ns = os_gettime_ns();
+			stats_decode_ns = 0;
+			stats_frames = 0;
 		}
 
 		const bool was_hardware = decoder.is_hardware();
