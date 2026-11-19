@@ -1,0 +1,49 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache OBS sources and deps
+        uses: actions/cache@v4
+        with:
+          path: .deps
+          key: deps-${{ hashFiles('buildspec.json') }}
+
+      - name: Configure
+        run: cmake --preset windows-ci-x64
+
+      - name: Build
+        run: cmake --build --preset windows-ci-x64
+
+      - name: Package
+        shell: pwsh
+        run: ./build-aux/package.ps1 -Config RelWithDebInfo
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phone-cam-windows-x64
+          path: |
+            release/*.zip
+            release/*.exe
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = Get-ChildItem release -File | Where-Object { $_.Extension -in '.zip', '.exe' } | ForEach-Object FullName
+          gh release create $env:GITHUB_REF_NAME @files --title "Phone Cam for OBS $env:GITHUB_REF_NAME" --generate-notes
