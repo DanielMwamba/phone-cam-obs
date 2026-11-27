@@ -44,6 +44,8 @@ target_sources(
     src/packet-queue.hpp
     src/adb-forward.cpp
     src/adb-forward.hpp
+    src/pcam-auth.cpp
+    src/pcam-auth.hpp
     src/pcam-reader.cpp
     src/pcam-reader.hpp
     src/tcp-socket.cpp

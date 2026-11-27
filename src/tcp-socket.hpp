@@ -37,6 +37,7 @@ public:
 
 	bool connect(const std::string &host, uint16_t port, int timeout_ms);
 	bool read_exact(uint8_t *dst, size_t size) override;
+	bool write_all(const uint8_t *src, size_t size);
 	void close();
 	void abort();
 

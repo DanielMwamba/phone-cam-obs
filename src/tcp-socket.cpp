@@ -160,6 +160,25 @@ bool TcpSocket::read_exact(uint8_t *dst, size_t size)
 	return true;
 }
 
+bool TcpSocket::write_all(const uint8_t *src, size_t size)
+{
+	const SOCKET s = static_cast<SOCKET>(socket_);
+	if (s == INVALID_SOCKET)
+		return false;
+
+	while (size > 0) {
+		const int chunk = static_cast<int>(std::min<size_t>(size, 1 << 20));
+		const int sent = send(s, reinterpret_cast<const char *>(src), chunk, 0);
+		if (sent <= 0) {
+			error_ = wsa_error_text("send");
+			return false;
+		}
+		src += sent;
+		size -= static_cast<size_t>(sent);
+	}
+	return true;
+}
+
 void TcpSocket::close()
 {
 	SOCKET s;
