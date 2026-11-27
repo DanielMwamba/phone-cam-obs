@@ -22,17 +22,33 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <cstdint>
 #include <string>
 
-// PCAM v1 framing (docs/protocol.md). Pure parsing: no OBS, no FFmpeg, no sockets.
+// PCAM v2 framing (docs/protocol.md). Pure parsing: no OBS, no FFmpeg, no sockets.
 namespace pcam {
 
+constexpr size_t kNonceSize = 16;
+constexpr size_t kHelloSize = 8 + kNonceSize;
+constexpr size_t kPairingResponseSize = 32;
 constexpr size_t kStreamHeaderSize = 16;
 constexpr size_t kPacketHeaderSize = 12;
-constexpr uint8_t kVersion = 1;
+constexpr uint8_t kVersion = 2;
 constexpr uint8_t kCodecH264 = 1;
+
+constexpr uint8_t kAuthNone = 0;
+constexpr uint8_t kAuthPairingCode = 1;
+
+// One byte the phone sends back after the pairing response.
+enum class PairingStatus : uint8_t { Ok = 0, WrongCode = 1, Locked = 2 };
 
 // The size field allows 1 GiB; a 1080p key frame is a few hundred KiB, so anything above this
 // is a corrupt stream and must not make us allocate.
 constexpr uint32_t kMaxPayloadSize = 8 * 1024 * 1024;
+
+// First bytes on a connection. auth tells whether the phone wants the pairing code.
+struct Hello {
+	uint8_t version = 0;
+	uint8_t auth = kAuthNone;
+	uint8_t nonce[kNonceSize] = {};
+};
 
 struct StreamHeader {
 	uint8_t version = 0;
@@ -57,6 +73,7 @@ public:
 };
 
 // Parse helpers, exposed separately so they can be checked without a stream.
+bool parse_hello(const uint8_t (&raw)[kHelloSize], Hello &out, std::string &error);
 bool parse_stream_header(const uint8_t (&raw)[kStreamHeaderSize], StreamHeader &out, std::string &error);
 bool parse_packet_header(const uint8_t (&raw)[kPacketHeaderSize], PacketHeader &out, std::string &error);
 
@@ -64,6 +81,9 @@ class Reader {
 public:
 	explicit Reader(ByteSource &source) : source_(source) {}
 
+	bool read_hello(Hello &out);
+	// Reads the phone's answer to the pairing response.
+	bool read_pairing_status(PairingStatus &out);
 	bool read_stream_header(StreamHeader &out);
 	bool read_packet_header(PacketHeader &out);
 	// Reads exactly `size` payload bytes into dst (the caller sized it from the packet header).

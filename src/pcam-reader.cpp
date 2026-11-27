@@ -43,14 +43,42 @@ uint64_t read_u64(const uint8_t *p)
 	return (uint64_t(read_u32(p)) << 32) | read_u32(p + 4);
 }
 
-} // namespace
-
-bool parse_stream_header(const uint8_t (&raw)[kStreamHeaderSize], StreamHeader &out, std::string &error)
+bool check_magic_and_version(const uint8_t *raw, std::string &error)
 {
 	if (std::memcmp(raw, "PCAM", 4) != 0) {
 		error = "bad magic (not a PCAM stream)";
 		return false;
 	}
+	if (raw[4] != kVersion) {
+		// v1 phones send no hello; an old app shows up here.
+		error = "unsupported PCAM version " + std::to_string(raw[4]) + " (update the Phone Cam app and plugin)";
+		return false;
+	}
+	return true;
+}
+
+} // namespace
+
+bool parse_hello(const uint8_t (&raw)[kHelloSize], Hello &out, std::string &error)
+{
+	if (!check_magic_and_version(raw, error))
+		return false;
+
+	out.version = raw[4];
+	out.auth = raw[5];
+	std::memcpy(out.nonce, raw + 8, kNonceSize);
+
+	if (out.auth != kAuthNone && out.auth != kAuthPairingCode) {
+		error = "unsupported auth method " + std::to_string(out.auth);
+		return false;
+	}
+	return true;
+}
+
+bool parse_stream_header(const uint8_t (&raw)[kStreamHeaderSize], StreamHeader &out, std::string &error)
+{
+	if (!check_magic_and_version(raw, error))
+		return false;
 
 	out.version = raw[4];
 	out.codec = raw[5];
@@ -58,10 +86,6 @@ bool parse_stream_header(const uint8_t (&raw)[kStreamHeaderSize], StreamHeader &
 	out.height = read_u16(raw + 8);
 	out.fps = read_u16(raw + 10);
 
-	if (out.version != kVersion) {
-		error = "unsupported PCAM version " + std::to_string(out.version);
-		return false;
-	}
 	if (out.codec != kCodecH264) {
 		error = "unsupported codec " + std::to_string(out.codec);
 		return false;
@@ -86,6 +110,31 @@ bool parse_packet_header(const uint8_t (&raw)[kPacketHeaderSize], PacketHeader &
 		error = "invalid payload size " + std::to_string(out.payload_size);
 		return false;
 	}
+	return true;
+}
+
+bool Reader::read_hello(Hello &out)
+{
+	uint8_t raw[kHelloSize];
+	if (!source_.read_exact(raw, sizeof(raw))) {
+		error_ = "connection closed before the hello";
+		return false;
+	}
+	return parse_hello(raw, out, error_);
+}
+
+bool Reader::read_pairing_status(PairingStatus &out)
+{
+	uint8_t raw = 0;
+	if (!source_.read_exact(&raw, 1)) {
+		error_ = "connection closed during pairing";
+		return false;
+	}
+	if (raw > static_cast<uint8_t>(PairingStatus::Locked)) {
+		error_ = "unknown pairing status " + std::to_string(raw);
+		return false;
+	}
+	out = static_cast<PairingStatus>(raw);
 	return true;
 }
 
