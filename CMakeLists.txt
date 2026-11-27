@@ -48,6 +48,8 @@ target_sources(
     src/pcam-auth.hpp
     src/pcam-reader.cpp
     src/pcam-reader.hpp
+    src/pts-clock.cpp
+    src/pts-clock.hpp
     src/tcp-socket.cpp
     src/tcp-socket.hpp
     src/h264-decoder.cpp
