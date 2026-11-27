@@ -12,6 +12,7 @@ This repository is the **OBS side**: a "Phone Cam" video source that receives th
 ## Features
 
 - **1080p30 H.264** from the phone's hardware encoder, about 10 Mbps.
+- **Phone microphone**: 48 kHz PCM in the same stream, lined up with the picture, with its own meter in the OBS mixer.
 - **Low latency**: framed protocol (no waiting for the next frame to find picture boundaries), unbuffered OBS source, a 3-frame queue that skips to the next key frame instead of piling up delay. Measured glass-to-glass: about 190 ms with an entry-level phone (Galaxy A05), most of it in the phone's camera pipeline.
 - **USB or Wi-Fi**: in USB mode the plugin runs `adb forward` itself; in Wi-Fi mode you type the address and the pairing code the app shows.
 - **Pairing code** over Wi-Fi: only a PC that knows the phone's 6-digit code can connect, and a stranger cannot kick the PC that is live. The code never travels in clear (HMAC challenge-response).
