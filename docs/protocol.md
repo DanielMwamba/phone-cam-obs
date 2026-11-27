@@ -50,7 +50,9 @@ What the pairing does not do: the video itself is not encrypted, so someone capt
 | 6 | 2 | width | pixels, e.g. 1920 |
 | 8 | 2 | height | pixels, e.g. 1080 |
 | 10 | 2 | fps | target frame rate, e.g. 30 |
-| 12 | 4 | reserved | `0` |
+| 12 | 1 | audio codec | `0` = no audio, `1` = PCM signed 16-bit little-endian |
+| 13 | 1 | audio channels | e.g. 1 (0 when no audio) |
+| 14 | 2 | audio sample rate | Hz, e.g. 48000 (0 when no audio) |
 
 ## Packets (repeated until the connection closes)
 
@@ -59,20 +61,23 @@ What the pairing does not do: the video itself is not encrypted, so someone capt
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 8 | `pts_us`: presentation time in microseconds (camera clock, monotonic) |
-| 8 | 4 | `flags_size`: bit 31 = key frame, bit 30 = codec config, bits 0-29 = payload size in bytes |
+| 8 | 4 | `flags_size`: bit 31 = key frame, bit 30 = codec config, bit 29 = audio, bits 0-28 = payload size in bytes |
 
-Payload: H.264 Annex-B (start codes included), exactly one encoded picture.
+Video payload (audio bit clear): H.264 Annex-B (start codes included), exactly one encoded picture.
+
+Audio payload (audio bit set): interleaved PCM samples in the format of the stream header (signed 16-bit **little-endian**, the native order of both ends), about 10 ms per packet. `pts_us` is the capture time of the first sample, on the same clock as the video, so the client can line the sound up with the picture.
 
 Rules:
 
 - The first packet after the stream header is always a key frame.
 - Every key frame carries SPS/PPS in front of the picture, so a decoder can start from any key frame. The phone never sends a config packet alone; the config bit is reserved for later codecs.
-- When the network falls behind, the phone drops frames up to the next key frame instead of queuing delay.
+- When the network falls behind, the phone drops frames up to the next key frame instead of queuing delay. Audio packets do not count toward that limit; the phone drops an audio packet only when its send queue is completely full.
+- Audio starts with the first key frame (no audio before the picture), and only when the stream header announces it.
 
 ## Versions
 
 - v1: no handshake, the stream header came first. A v1 client reading a v2 phone sees version `2` in the first bytes and stops with "unsupported version".
-- v2: adds the hello and the pairing code. Stream header and packets are unchanged.
+- v2: adds the hello, the pairing code and the phone's microphone (audio fields in the stream header, audio bit in the packets).
 
 ## Why a framed protocol
 
