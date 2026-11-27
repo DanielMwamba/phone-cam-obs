@@ -13,7 +13,8 @@ This repository is the **OBS side**: a "Phone Cam" video source that receives th
 
 - **1080p30 H.264** from the phone's hardware encoder, about 10 Mbps.
 - **Low latency**: framed protocol (no waiting for the next frame to find picture boundaries), unbuffered OBS source, a 3-frame queue that skips to the next key frame instead of piling up delay. Measured glass-to-glass: about 190 ms with an entry-level phone (Galaxy A05), most of it in the phone's camera pipeline.
-- **USB or Wi-Fi**: in USB mode the plugin runs `adb forward` itself; in Wi-Fi mode you type the address the app shows.
+- **USB or Wi-Fi**: in USB mode the plugin runs `adb forward` itself; in Wi-Fi mode you type the address and the pairing code the app shows.
+- **Pairing code** over Wi-Fi: only a PC that knows the phone's 6-digit code can connect, and a stranger cannot kick the PC that is live. The code never travels in clear (HMAC challenge-response).
 - **Auto-reconnect** every 2 s; the picture is cleared when the phone goes away.
 - Software decoding by default, **D3D11VA** hardware decoding as an option.
 
@@ -30,13 +31,14 @@ Requirements: Windows 10/11 x64, OBS Studio 33.x.
 2. In OBS: **Sources → + → Phone Cam**.
 3. Pick the connection:
    - **USB** (default): enable USB debugging on the phone, plug it in, accept the "Allow USB debugging" prompt. `adb` is taken from your `PATH`, or from the Android SDK (`%LOCALAPPDATA%\Android\Sdk\platform-tools`).
-   - **Wi-Fi**: untick **USB** and type the IP shown in the app. The phone and the PC must be on the same network, and that network must let devices talk to each other (some public or office Wi-Fi isolate clients; a Windows mobile hotspot works).
+   - **Wi-Fi**: untick **USB**, type the IP and the **pairing code** shown in the app. The phone and the PC must be on the same network, and that network must let devices talk to each other (some public or office Wi-Fi isolate clients; a Windows mobile hotspot works).
 4. Port **5050** unless you changed it in the app.
 
 | Setting | Default | What it does |
 |---|---|---|
 | USB (adb forward) | on | Forwards the port over USB and connects to 127.0.0.1 |
 | Host / Port | 127.0.0.1 / 5050 | Phone address for Wi-Fi |
+| Pairing code | empty | The 6-digit code shown in the app, Wi-Fi only. After a wrong code the plugin waits until you fix it; after 5 wrong codes the phone refuses Wi-Fi clients for 60 s |
 | Hardware decoding | off | D3D11VA; on many laptops software is faster for 1080p30 and shows the first frame sooner |
 | Low latency (unbuffered) | on | Show each frame as soon as it is decoded |
 
@@ -45,7 +47,7 @@ Troubleshooting: **Help → Log Files** in OBS; every plugin line starts with `[
 ## How it works
 
 ```
-Phone: camera → hardware H.264 → TCP server :5050 (PCAM v1)
+Phone: camera → hardware H.264 → TCP server :5050 (PCAM v2)
 PC:    network thread → 3-packet queue → decode thread (FFmpeg) → OBS async source
 ```
 
@@ -57,7 +59,8 @@ PC:    network thread → 3-packet queue → decode thread (FFmpeg) → OBS asyn
 | `src/plugin-main.cpp` | Module load/unload, registers the source |
 | `src/phonecam-source.*` | The OBS source: properties, network and decode threads, stats logs |
 | `src/packet-queue.*` | Bounded packet queue with a buffer pool and drop-to-key-frame rule |
-| `src/pcam-reader.*` | PCAM v1 parsing, no OBS dependency |
+| `src/pcam-reader.*` | PCAM v2 parsing, no OBS dependency |
+| `src/pcam-auth.*` | Pairing code response (HMAC-SHA256 from FFmpeg's avutil) |
 | `src/tcp-socket.*` | Winsock client: connect timeout, read timeout, abort from another thread |
 | `src/h264-decoder.*` | FFmpeg wrapper, D3D11VA then software |
 | `src/adb-forward.*` | Runs `adb forward` without a console window |
