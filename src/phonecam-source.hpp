@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 #include "packet-queue.hpp"
+#include "pts-clock.hpp"
 #include "tcp-socket.hpp"
 
 #include <obs-module.h>
@@ -30,11 +31,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 void register_phonecam_source();
 
 // One "Phone Cam" source in OBS. Two threads per source:
-// - network: connect (with adb forward over USB), read PCAM packets, reconnect every 2 s;
+// - network: connect (with adb forward over USB), read PCAM packets, reconnect every 2 s; the
+//   phone's sound needs no decoding and goes to OBS from here, stamped by clock_;
 // - decode: decode H.264 and hand each picture to OBS the moment it is ready.
 // Splitting them keeps a slow decode from stalling the socket (the phone would then drop
 // frames itself) and lets the bounded queue between them shed latency.
@@ -78,6 +81,8 @@ private:
 	PairingOutcome pair(pcam::Reader &reader, const pcam::Hello &hello, const Config &config,
 			    std::string &message);
 	void decode_loop(bool try_hardware);
+	// Network thread: hands one PCM packet to OBS, placed on the picture's timeline.
+	void output_audio(const pcam::StreamHeader &header, const pcam::PacketHeader &packet);
 	// Returns false if the source is stopping (sleep interrupted).
 	bool sleep_unless_stopped(int milliseconds);
 	// Blocks until the source stops or its settings change (which restarts the threads).
@@ -89,6 +94,8 @@ private:
 	std::atomic<bool> running_{false};
 	std::unique_ptr<TcpSocket> socket_;
 	PacketQueue queue_;
+	PtsClock clock_;
+	std::vector<uint8_t> audio_buffer_; // network thread only
 	std::thread network_thread_;
 	std::thread decode_thread_;
 

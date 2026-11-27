@@ -30,6 +30,7 @@ struct Packet {
 	std::vector<uint8_t> data; // payload followed by decoder padding; capacity is reused
 	size_t size = 0;           // payload bytes, without padding
 	bool key_frame = false;
+	uint64_t pts_us = 0;        // phone clock, to line the sound up with this picture
 	bool end_of_stream = false; // marker: connection lost, clear the picture
 	uint64_t stream_id = 0;     // changes on every connection, so the decoder starts fresh
 	uint64_t stream_start_ns = 0;

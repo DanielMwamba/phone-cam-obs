@@ -258,13 +258,27 @@ void PhoneCamSource::network_loop(const Config config)
 
 		last_error.clear();
 		stream_id++;
-		obs_log(LOG_INFO, "connected to %s:%u%s: PCAM v%u H.264 %ux%u @ %u fps", config.host.c_str(),
+		clock_.reset(stream_id);
+		const std::string audio_text = header.has_audio() ? ", audio PCM " + std::to_string(header.audio_sample_rate) +
+									     " Hz " + std::to_string(header.audio_channels) + " ch"
+								   : ", no audio";
+		obs_log(LOG_INFO, "connected to %s:%u%s: PCAM v%u H.264 %ux%u @ %u fps%s", config.host.c_str(),
 			config.port, hello.auth == pcam::kAuthPairingCode ? " (paired)" : "", header.version,
-			header.width, header.height, header.fps);
+			header.width, header.height, header.fps, audio_text.c_str());
 
 		size_t dropped = 0;
 		pcam::PacketHeader packet_header;
 		while (running_ && reader.read_packet_header(packet_header)) {
+			if (packet_header.audio) {
+				// Straight to OBS: no decoding, and it must not wait behind pictures.
+				audio_buffer_.resize(packet_header.payload_size);
+				if (!reader.read_payload(audio_buffer_.data(), audio_buffer_.size()))
+					break;
+				if (header.has_audio())
+					output_audio(header, packet_header);
+				continue;
+			}
+
 			std::unique_ptr<Packet> packet = queue_.acquire();
 			packet->data.resize(packet_header.payload_size + H264Decoder::kInputPadding);
 			if (!reader.read_payload(packet->data.data(), packet_header.payload_size))
@@ -275,6 +289,7 @@ void PhoneCamSource::network_loop(const Config config)
 			// Config-only packets (reserved in v1) must never be dropped either.
 			packet->key_frame = packet_header.key_frame || packet_header.config;
 			packet->stream_id = stream_id;
+			packet->pts_us = packet_header.pts_us;
 			packet->stream_start_ns = connected_ns;
 
 			const size_t dropped_now = queue_.push(std::move(packet));
@@ -291,6 +306,24 @@ void PhoneCamSource::network_loop(const Config config)
 		queue_.push_end_of_stream();
 		sleep_unless_stopped(kReconnectDelayMs);
 	}
+}
+
+void PhoneCamSource::output_audio(const pcam::StreamHeader &header, const pcam::PacketHeader &packet)
+{
+	const size_t frame_bytes = 2 * size_t(header.audio_channels);
+	uint64_t timestamp = 0;
+	// Before the first picture there is nothing to line up with: drop the sound.
+	if (packet.payload_size % frame_bytes != 0 || !clock_.to_obs_time(packet.pts_us, timestamp))
+		return;
+
+	obs_source_audio audio = {};
+	audio.data[0] = audio_buffer_.data();
+	audio.frames = static_cast<uint32_t>(packet.payload_size / frame_bytes);
+	audio.speakers = header.audio_channels == 2 ? SPEAKERS_STEREO : SPEAKERS_MONO;
+	audio.format = AUDIO_FORMAT_16BIT;
+	audio.samples_per_sec = header.audio_sample_rate;
+	audio.timestamp = timestamp;
+	obs_source_output_audio(source_, &audio);
 }
 
 void PhoneCamSource::decode_loop(const bool try_hardware)
@@ -343,6 +376,7 @@ void PhoneCamSource::decode_loop(const bool try_hardware)
 			// buffered mode it at least keeps a steady clock.
 			frame.timestamp = end_ns;
 			obs_source_output_video(source_, &frame);
+			clock_.observe(packet->stream_id, packet->pts_us, end_ns);
 
 			stats_frames++;
 			stats_decode_ns += end_ns - start_ns;
@@ -454,7 +488,7 @@ void register_phonecam_source()
 	info.id = "phonecam_source";
 	info.type = OBS_SOURCE_TYPE_INPUT;
 	// DO_NOT_DUPLICATE: the phone serves one viewer per port, a copy would steal the stream.
-	info.output_flags = OBS_SOURCE_ASYNC_VIDEO | OBS_SOURCE_DO_NOT_DUPLICATE;
+	info.output_flags = OBS_SOURCE_ASYNC_VIDEO | OBS_SOURCE_AUDIO | OBS_SOURCE_DO_NOT_DUPLICATE;
 	info.icon_type = OBS_ICON_TYPE_CAMERA;
 	info.get_name = [](void *) {
 		return obs_module_text("PhoneCam");
