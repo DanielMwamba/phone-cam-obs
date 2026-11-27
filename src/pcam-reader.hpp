@@ -33,6 +33,9 @@ constexpr size_t kPacketHeaderSize = 12;
 constexpr uint8_t kVersion = 2;
 constexpr uint8_t kCodecH264 = 1;
 
+constexpr uint8_t kAudioNone = 0;
+constexpr uint8_t kAudioPcmS16le = 1;
+
 constexpr uint8_t kAuthNone = 0;
 constexpr uint8_t kAuthPairingCode = 1;
 
@@ -56,12 +59,18 @@ struct StreamHeader {
 	uint16_t width = 0;
 	uint16_t height = 0;
 	uint16_t fps = 0;
+	uint8_t audio_codec = kAudioNone;
+	uint8_t audio_channels = 0;
+	uint16_t audio_sample_rate = 0;
+
+	bool has_audio() const { return audio_codec != kAudioNone; }
 };
 
 struct PacketHeader {
 	uint64_t pts_us = 0;
 	bool key_frame = false;
 	bool config = false;
+	bool audio = false;
 	uint32_t payload_size = 0;
 };
 

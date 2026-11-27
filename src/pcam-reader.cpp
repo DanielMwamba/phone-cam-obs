@@ -26,7 +26,8 @@ namespace {
 
 constexpr uint32_t kKeyFrameBit = 1u << 31;
 constexpr uint32_t kConfigBit = 1u << 30;
-constexpr uint32_t kSizeMask = (1u << 30) - 1;
+constexpr uint32_t kAudioBit = 1u << 29;
+constexpr uint32_t kSizeMask = (1u << 29) - 1;
 
 uint16_t read_u16(const uint8_t *p)
 {
@@ -85,6 +86,9 @@ bool parse_stream_header(const uint8_t (&raw)[kStreamHeaderSize], StreamHeader &
 	out.width = read_u16(raw + 6);
 	out.height = read_u16(raw + 8);
 	out.fps = read_u16(raw + 10);
+	out.audio_codec = raw[12];
+	out.audio_channels = raw[13];
+	out.audio_sample_rate = read_u16(raw + 14);
 
 	if (out.codec != kCodecH264) {
 		error = "unsupported codec " + std::to_string(out.codec);
@@ -92,6 +96,14 @@ bool parse_stream_header(const uint8_t (&raw)[kStreamHeaderSize], StreamHeader &
 	}
 	if (out.width == 0 || out.height == 0) {
 		error = "invalid video size";
+		return false;
+	}
+	if (out.audio_codec > kAudioPcmS16le) {
+		error = "unsupported audio codec " + std::to_string(out.audio_codec);
+		return false;
+	}
+	if (out.has_audio() && (out.audio_channels < 1 || out.audio_channels > 2 || out.audio_sample_rate == 0)) {
+		error = "invalid audio format";
 		return false;
 	}
 	return true;
@@ -104,6 +116,7 @@ bool parse_packet_header(const uint8_t (&raw)[kPacketHeaderSize], PacketHeader &
 	out.pts_us = read_u64(raw);
 	out.key_frame = (flags_size & kKeyFrameBit) != 0;
 	out.config = (flags_size & kConfigBit) != 0;
+	out.audio = (flags_size & kAudioBit) != 0;
 	out.payload_size = flags_size & kSizeMask;
 
 	if (out.payload_size == 0 || out.payload_size > kMaxPayloadSize) {
