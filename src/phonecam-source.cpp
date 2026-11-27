@@ -40,6 +40,9 @@ constexpr const char *kPairingCode = "pairing_code";
 constexpr const char *kUsb = "usb";
 constexpr const char *kHardwareDecode = "hw_decode";
 constexpr const char *kUnbuffered = "unbuffered";
+// Saved with the source, so a disconnected source stays disconnected after an OBS restart.
+constexpr const char *kEnabled = "enabled";
+constexpr const char *kToggle = "toggle_connection";
 
 constexpr const char *kLocalhost = "127.0.0.1";
 constexpr int kDefaultPort = 5050;
@@ -81,6 +84,7 @@ PhoneCamSource::Config PhoneCamSource::read_config(obs_data_t *settings)
 		config.pairing_code.clear();
 	config.hardware_decode = obs_data_get_bool(settings, kHardwareDecode);
 	config.unbuffered = obs_data_get_bool(settings, kUnbuffered);
+	config.enabled = obs_data_get_bool(settings, kEnabled);
 	if (config.usb || config.host.empty())
 		config.host = kLocalhost;
 	return config;
@@ -104,6 +108,8 @@ void PhoneCamSource::update(obs_data_t *settings)
 
 void PhoneCamSource::start()
 {
+	if (!config_.enabled)
+		return;
 	running_ = true;
 	socket_ = std::make_unique<TcpSocket>();
 	queue_.restart();
@@ -371,6 +377,28 @@ void PhoneCamSource::decode_loop(const bool try_hardware)
 
 namespace {
 
+const char *toggle_label(bool enabled)
+{
+	return obs_module_text(enabled ? "Disconnect" : "Connect");
+}
+
+bool toggle_clicked(obs_properties_t *, obs_property_t *property, void *data)
+{
+	auto *self = static_cast<PhoneCamSource *>(data);
+	const bool enable = !self->enabled();
+
+	// Through the settings, like any other field: update() stops or starts the threads and
+	// the choice is saved with the scene.
+	obs_source_t *source = self->source();
+	obs_data_t *settings = obs_source_get_settings(source);
+	obs_data_set_bool(settings, kEnabled, enable);
+	obs_source_update(source, settings);
+	obs_data_release(settings);
+
+	obs_property_set_description(property, toggle_label(enable));
+	return true;
+}
+
 bool usb_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
 	// Over USB the host is always 127.0.0.1 (adb forward) and no code is asked, so these
@@ -381,9 +409,12 @@ bool usb_modified(obs_properties_t *props, obs_property_t *, obs_data_t *setting
 	return true;
 }
 
-obs_properties_t *get_properties(void *)
+obs_properties_t *get_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
+
+	const bool enabled = static_cast<PhoneCamSource *>(data)->enabled();
+	obs_properties_add_button2(props, kToggle, toggle_label(enabled), toggle_clicked, data);
 
 	obs_property_t *usb = obs_properties_add_bool(props, kUsb, obs_module_text("Usb"));
 	obs_property_set_long_description(usb, obs_module_text("Usb.Description"));
@@ -412,6 +443,7 @@ void get_defaults(obs_data_t *settings)
 	// needs ~350 ms to show the first frame after every (re)connect versus ~30 ms.
 	obs_data_set_default_bool(settings, kHardwareDecode, false);
 	obs_data_set_default_bool(settings, kUnbuffered, true);
+	obs_data_set_default_bool(settings, kEnabled, true);
 }
 
 } // namespace

@@ -47,6 +47,9 @@ public:
 	PhoneCamSource &operator=(const PhoneCamSource &) = delete;
 
 	void update(obs_data_t *settings);
+	// False after the user pressed Disconnect: no connection, black picture.
+	bool enabled() const { return config_.enabled; }
+	obs_source_t *source() const { return source_; }
 
 private:
 	struct Config {
@@ -56,10 +59,11 @@ private:
 		bool usb = true;
 		bool hardware_decode = true;
 		bool unbuffered = true;
+		bool enabled = true;
 
 		bool same_connection(const Config &other) const
 		{
-			return host == other.host && port == other.port && usb == other.usb &&
+			return enabled == other.enabled && host == other.host && port == other.port && usb == other.usb &&
 			       pairing_code == other.pairing_code && hardware_decode == other.hardware_decode;
 		}
 	};
