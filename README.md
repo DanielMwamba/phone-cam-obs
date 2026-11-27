@@ -36,6 +36,7 @@ Requirements: Windows 10/11 x64, OBS Studio 33.x.
 
 | Setting | Default | What it does |
 |---|---|---|
+| Connect / Disconnect | connected | Button at the top: cuts the connection (black picture, the phone goes back to "Waiting for OBS") or brings it back; kept with the scene |
 | USB (adb forward) | on | Forwards the port over USB and connects to 127.0.0.1 |
 | Host / Port | 127.0.0.1 / 5050 | Phone address for Wi-Fi |
 | Pairing code | empty | The 6-digit code shown in the app, Wi-Fi only. After a wrong code the plugin waits until you fix it; after 5 wrong codes the phone refuses Wi-Fi clients for 60 s |
