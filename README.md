@@ -7,7 +7,7 @@
 
 Use your Android phone as a low-latency 1080p camera in OBS Studio, over Wi-Fi or USB.
 
-This repository is the **OBS side**: a "Phone Cam" video source that receives the live H.264 stream of the **Phone Cam Android app** and shows it in OBS as fast as possible. The Android app is required (public release coming soon).
+This repository is the **OBS side**: a "Phone Cam" video source that receives the live H.264 stream of the **[Phone Cam Android app](https://github.com/DanielMwamba/phone-cam)** and shows it in OBS as fast as possible. The Android app is required: download the APK from its [releases](https://github.com/DanielMwamba/phone-cam/releases).
 
 ## Features
 
