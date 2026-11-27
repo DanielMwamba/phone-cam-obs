@@ -52,6 +52,7 @@ private:
 	struct Config {
 		std::string host;
 		uint16_t port = 0;
+		std::string pairing_code; // 6 digits, empty when not typed or malformed
 		bool usb = true;
 		bool hardware_decode = true;
 		bool unbuffered = true;
@@ -59,7 +60,7 @@ private:
 		bool same_connection(const Config &other) const
 		{
 			return host == other.host && port == other.port && usb == other.usb &&
-			       hardware_decode == other.hardware_decode;
+			       pairing_code == other.pairing_code && hardware_decode == other.hardware_decode;
 		}
 	};
 
@@ -67,10 +68,16 @@ private:
 
 	void start();
 	void stop();
+	enum class PairingOutcome { Paired, RetryLater, NeedNewCode };
+
 	void network_loop(Config config);
+	PairingOutcome pair(pcam::Reader &reader, const pcam::Hello &hello, const Config &config,
+			    std::string &message);
 	void decode_loop(bool try_hardware);
 	// Returns false if the source is stopping (sleep interrupted).
 	bool sleep_unless_stopped(int milliseconds);
+	// Blocks until the source stops or its settings change (which restarts the threads).
+	void wait_for_new_settings();
 
 	obs_source_t *const source_;
 	Config config_;

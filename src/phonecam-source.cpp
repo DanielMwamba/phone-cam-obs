@@ -23,6 +23,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "adb-forward.hpp"
 #include "h264-decoder.hpp"
+#include "pcam-auth.hpp"
 #include "pcam-reader.hpp"
 
 #include <plugin-support.h>
@@ -35,6 +36,7 @@ namespace {
 
 constexpr const char *kHost = "host";
 constexpr const char *kPort = "port";
+constexpr const char *kPairingCode = "pairing_code";
 constexpr const char *kUsb = "usb";
 constexpr const char *kHardwareDecode = "hw_decode";
 constexpr const char *kUnbuffered = "unbuffered";
@@ -43,6 +45,8 @@ constexpr const char *kLocalhost = "127.0.0.1";
 constexpr int kDefaultPort = 5050;
 constexpr int kReconnectDelayMs = 2000;
 constexpr int kConnectTimeoutMs = 2000;
+// The phone refuses every Wi-Fi client for 60 s after 5 wrong codes.
+constexpr int kLockedRetryMs = 60000;
 constexpr uint64_t kStatsIntervalNs = 5000000000ULL;
 
 // 3 pictures = 100 ms at 30 fps. Enough to absorb Wi-Fi jitter; beyond that we would rather
@@ -73,6 +77,8 @@ PhoneCamSource::Config PhoneCamSource::read_config(obs_data_t *settings)
 	config.host = obs_data_get_string(settings, kHost);
 	config.port = static_cast<uint16_t>(obs_data_get_int(settings, kPort));
 	config.usb = obs_data_get_bool(settings, kUsb);
+	if (!pcam::normalize_pairing_code(obs_data_get_string(settings, kPairingCode), config.pairing_code))
+		config.pairing_code.clear();
 	config.hardware_decode = obs_data_get_bool(settings, kHardwareDecode);
 	config.unbuffered = obs_data_get_bool(settings, kUnbuffered);
 	if (config.usb || config.host.empty())
@@ -131,6 +137,46 @@ void PhoneCamSource::stop()
 	obs_source_output_video(source_, nullptr);
 }
 
+void PhoneCamSource::wait_for_new_settings()
+{
+	std::unique_lock<std::mutex> lock(sleep_mutex_);
+	sleep_cv_.wait(lock, [this] { return !running_; });
+}
+
+PhoneCamSource::PairingOutcome PhoneCamSource::pair(pcam::Reader &reader, const pcam::Hello &hello,
+						    const Config &config, std::string &message)
+{
+	if (config.pairing_code.empty()) {
+		message = "the phone asks for a pairing code: type the 6-digit code shown in the app";
+		return PairingOutcome::NeedNewCode;
+	}
+
+	uint8_t response[pcam::kPairingResponseSize];
+	pcam::pairing_response(config.pairing_code, hello.nonce, response);
+	if (!socket_->write_all(response, sizeof(response))) {
+		message = "pairing interrupted: " + socket_->error();
+		return PairingOutcome::RetryLater;
+	}
+	pcam::PairingStatus status;
+	if (!reader.read_pairing_status(status)) {
+		message = "pairing interrupted: " + reader.error();
+		return PairingOutcome::RetryLater;
+	}
+
+	switch (status) {
+	case pcam::PairingStatus::Ok:
+		return PairingOutcome::Paired;
+	case pcam::PairingStatus::WrongCode:
+		// Retrying the same code would only lock the phone: wait for the user to fix it.
+		message = "wrong pairing code: check the code shown in the app";
+		return PairingOutcome::NeedNewCode;
+	case pcam::PairingStatus::Locked:
+	default:
+		message = "the phone is locked after too many wrong codes, retrying in 60 s";
+		return PairingOutcome::RetryLater;
+	}
+}
+
 bool PhoneCamSource::sleep_unless_stopped(int milliseconds)
 {
 	std::unique_lock<std::mutex> lock(sleep_mutex_);
@@ -170,8 +216,8 @@ void PhoneCamSource::network_loop(const Config config)
 
 		const uint64_t connected_ns = os_gettime_ns();
 		pcam::Reader reader(*socket_);
-		pcam::StreamHeader header;
-		if (!reader.read_stream_header(header)) {
+		pcam::Hello hello;
+		if (!reader.read_hello(hello)) {
 			// Over USB the adb port always accepts, even when the app is closed; the
 			// failure shows up here instead.
 			report("no stream from " + config.host + ":" + std::to_string(config.port) + " (" +
@@ -181,10 +227,34 @@ void PhoneCamSource::network_loop(const Config config)
 			continue;
 		}
 
+		if (hello.auth == pcam::kAuthPairingCode) {
+			std::string message;
+			const PairingOutcome outcome = pair(reader, hello, config, message);
+			if (outcome != PairingOutcome::Paired) {
+				report(message);
+				socket_->close();
+				if (outcome == PairingOutcome::NeedNewCode)
+					wait_for_new_settings();
+				else
+					sleep_unless_stopped(kLockedRetryMs);
+				continue;
+			}
+		}
+
+		pcam::StreamHeader header;
+		if (!reader.read_stream_header(header)) {
+			report("no stream from " + config.host + ":" + std::to_string(config.port) + " (" +
+			       reader.error() + ")");
+			socket_->close();
+			sleep_unless_stopped(kReconnectDelayMs);
+			continue;
+		}
+
 		last_error.clear();
 		stream_id++;
-		obs_log(LOG_INFO, "connected to %s:%u: PCAM v%u H.264 %ux%u @ %u fps", config.host.c_str(), config.port,
-			header.version, header.width, header.height, header.fps);
+		obs_log(LOG_INFO, "connected to %s:%u%s: PCAM v%u H.264 %ux%u @ %u fps", config.host.c_str(),
+			config.port, hello.auth == pcam::kAuthPairingCode ? " (paired)" : "", header.version,
+			header.width, header.height, header.fps);
 
 		size_t dropped = 0;
 		pcam::PacketHeader packet_header;
@@ -303,8 +373,11 @@ namespace {
 
 bool usb_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
-	// Over USB the host is always 127.0.0.1 (adb forward), so the field would only confuse.
-	obs_property_set_enabled(obs_properties_get(props, kHost), !obs_data_get_bool(settings, kUsb));
+	// Over USB the host is always 127.0.0.1 (adb forward) and no code is asked, so these
+	// fields would only confuse.
+	const bool wifi = !obs_data_get_bool(settings, kUsb);
+	obs_property_set_enabled(obs_properties_get(props, kHost), wifi);
+	obs_property_set_enabled(obs_properties_get(props, kPairingCode), wifi);
 	return true;
 }
 
@@ -317,6 +390,9 @@ obs_properties_t *get_properties(void *)
 	obs_property_set_modified_callback(usb, usb_modified);
 
 	obs_properties_add_text(props, kHost, obs_module_text("Host"), OBS_TEXT_DEFAULT);
+	obs_property_t *code = obs_properties_add_text(props, kPairingCode, obs_module_text("PairingCode"),
+							OBS_TEXT_DEFAULT);
+	obs_property_set_long_description(code, obs_module_text("PairingCode.Description"));
 	obs_properties_add_int(props, kPort, obs_module_text("Port"), 1, 65535, 1);
 	obs_properties_add_bool(props, kHardwareDecode, obs_module_text("HardwareDecode"));
 
@@ -328,6 +404,7 @@ obs_properties_t *get_properties(void *)
 void get_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_string(settings, kHost, kLocalhost);
+	obs_data_set_default_string(settings, kPairingCode, "");
 	obs_data_set_default_int(settings, kPort, kDefaultPort);
 	obs_data_set_default_bool(settings, kUsb, true);
 	// Off by default: measured on a Ryzen 5 4650U, software decoding of 1080p30 takes ~6 ms per
